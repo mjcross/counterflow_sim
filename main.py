@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import numpy as np
 from time import sleep
 
@@ -8,16 +9,23 @@ Fb = 2.5 / 60   # coolant flow in litres/sec
 Ta0 = 80.0      # wort input temp
 Tb0 = 14.0      # coolant input temp
 
-N = 10          # number of simulation points
+N = 100         # number of simulation points
 dx = L/(N-1)    # space between points
 
 Ca = Fa         # use flow rate as a proxy for heat capacity
 Cb = Fb
 
-k = 0.01 * dx   # thermal conductivity
+k = 2 * dx   # thermal conductivity
 
-Ta = np.array(N * [Ta0])
+Ta = np.array(N * [Ta0])    # initialise elements of both circuits
 Tb = np.array(N * [Tb0])
+
+# create chart objects globally so we can easily update them
+fig, ax = plt.subplots()
+Ta_plot = ax.plot(Ta, '-r')[0]
+Tb_plot = ax.plot(Tb, '-g')[0]
+ax.set(ylim=[0,100], ylabel='Temperature')
+ax.legend()
 
 def update_temps():
     for i in range(N):
@@ -38,16 +46,15 @@ def update_temps():
     Tb[N-1] = Tb0
 
 
+def update(frame):
+    update_temps()
+    Ta_plot.set_ydata(Ta)
+    Tb_plot.set_ydata(Tb)
+    return (Ta_plot, Tb_plot)
 
 def main():
-
-    for i in range(100):
-        update_temps()
-
-        print(Ta.round(3))
-        print(Tb.round(3))
-
-        print()
+    ani = animation.FuncAnimation(fig=fig, func=update, frames=40, interval=0)
+    plt.show()
 
 
 if __name__ == '__main__':
