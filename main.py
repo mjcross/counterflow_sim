@@ -4,27 +4,28 @@ import numpy as np
 from time import sleep
 
 L = 190         # length of CFC in cm
-Fa = 1.95 / 60  # wort flow in litres/sec
-Fb = 2.5 / 60   # coolant flow in litres/sec
+Fa = 2 / 60     # wort flow in litres/sec
+Fb = 2 / 60     # coolant flow in litres/sec
 Ta0 = 80.0      # wort input temp
 Tb0 = 14.0      # coolant input temp
 
-N = 100         # number of simulation points
+N = 1000        # number of simulation points
 dx = L/(N-1)    # space between points
 
 Ca = Fa         # use flow rate as a proxy for heat capacity
 Cb = Fb
 
-k = 2 * dx   # thermal conductivity
+k = 1 * dx   # thermal conductivity
 
 Ta = np.array(N * [Ta0])    # initialise elements of both circuits
 Tb = np.array(N * [Tb0])
 
 # create chart objects globally so we can easily update them
 fig, ax = plt.subplots()
-Ta_plot = ax.plot(Ta, '-r')[0]
-Tb_plot = ax.plot(Tb, '-g')[0]
-ax.set(ylim=[0,100], ylabel='Temperature')
+plt.grid(axis='y')
+Ta_plot = ax.plot(Ta, '-r', label='Wort')[0]
+Tb_plot = ax.plot(Tb, '-g', label='Coolant')[0]
+ax.set(xlim=[0,N], ylim=[0,100], ylabel='Temperature')
 ax.legend()
 
 def update_temps():
