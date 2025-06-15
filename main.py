@@ -5,7 +5,7 @@ from time import sleep
 
 L = 190         # length of CFC in cm
 Fa = 2 / 60     # wort flow in litres/sec
-Fb = 2 / 60     # coolant flow in litres/sec
+Fb = 2.5 / 60     # coolant flow in litres/sec
 Ta0 = 80.0      # wort input temp
 Tb0 = 14.0      # coolant input temp
 
@@ -15,7 +15,7 @@ dx = L/(N-1)    # space between points
 Ca = Fa         # use flow rate as a proxy for heat capacity
 Cb = Fb
 
-k = 1 * dx   # thermal conductivity
+k = .001 * dx   # thermal conductivity
 
 Ta = np.array(N * [Ta0])    # initialise elements of both circuits
 Tb = np.array(N * [Tb0])
@@ -34,8 +34,8 @@ def update_temps():
         dQ = k * (Ta[i] - Tb[i])
 
         # update temperatures according to heat capacity
-        Ta[i] -= dQ * Ca
-        Tb[i] += dQ * Cb
+        Ta[i] -= dQ / Ca
+        Tb[i] += dQ / Cb
 
     # move everything along one in the direction of flow
     for i in range(N-1, 0, -1):
