@@ -1,72 +1,61 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
-from time import sleep
+from functools import partial
 
-L = 190         # length of CFC in cm
-Fa = 2.0 / 60   # wort flow in litres/sec
-Fb = 3.0 / 60   # coolant flow in litres/sec
-Ta0 = 80.0      # wort input temp
-Tb0 = 14.0      # coolant input temp
+class CFC:
+    def __init__(self, Ta_in, Tb_in, Fa, Fb, k, Ca, Cb, N:int):
+        self.N = N
+        self.Ta_in = Ta_in
+        self.Tb_in = Tb_in
+        self.Ta = np.array(N * [Ta_in], dtype='float')
+        self.Tb = np.array(N * [Tb_in], dtype='float')            
+        self.Ca = Fa * Ca
+        self.Cb = Fb * Cb
+        self.k = k
 
-N = 254         # number of simulation points
-dx = L/(N-1)    # space between points
+    def update(self):
+        for i in range(self.N):
+            dQ = self.k * (self.Ta[i] - self.Tb[i])
+            self.Ta[i] -= dQ / self.Ca
+            self.Tb[i] += dQ / self.Cb
+        self.Ta = np.roll(self.Ta, 1)
+        self.Tb = np.roll(self.Tb, -1)
+        self.Ta[0] = self.Ta_in
+        self.Tb[-1] = self.Tb_in
 
-Ca = Fa         # use flow rate as a proxy for heat capacity
-Cb = Fb
+class Simulation:
+    def __init__(self, Ta_in, Tb_in, Fa, Fb, k, Ca:float=1, Cb:float=1, N:int=250):
+        self.cfc = CFC(Ta_in, Tb_in, Fa, Fb, k, Ca, Cb, N)
+        self.x = np.linspace(0, 1, N)
+        self.fig, ax = plt.subplots()
+        plt.grid(axis='y')
+        self.Ta_plot = ax.plot(self.x, self.cfc.Ta, '-r', label='Wort')[0]
+        self.Tb_plot = ax.plot(self.x, self.cfc.Tb, '-g', label='Coolant')[0]
+        self.Tdiff_plot = ax.plot(self.x, self.cfc.Ta - self.cfc.Tb, '-b', label='difference')[0]
+        ax.set(xlim=[0, 1], ylim=[0, 100], ylabel='Temperature')
+        #ax.set_yscale('log')
+        ax.legend()
 
-k = .003 * dx   # thermal conductivity
-
-Ta = np.array(N * [Tb0])    # initialise both circuits to wort temperature
-Tb = np.array(N * [Tb0])
-
-# create chart objects globally so we can easily update them
-fig, ax = plt.subplots()
-plt.grid(axis='y')
-Ta_plot = ax.plot(Ta, '-r', label='Wort')[0]
-Tb_plot = ax.plot(Tb, '-g', label='Coolant')[0]
-Tdiff_plot = ax.plot(Ta - Tb, '-b', label='difference')[0]
-ax.set(xlim=[0,N], ylim=[0.0001, 100], ylabel='Temperature')
-#ax.set_yscale('log')
-ax.legend()
-
-def update_temps():
-    for i in range(N):
-        # heat flux proportional to temperature difference
-        dQ = k * (Ta[i] - Tb[i])
-
-        # update temperatures according to heat capacity
-        Ta[i] -= dQ / Ca
-        Tb[i] += dQ / Cb
-
-    # move everything along one in the direction of flow
-    for i in range(N-1, 0, -1):
-        Ta[i] = Ta[i-1]
-    Ta[0] = Ta0
-
-    for i in range(N-1):
-        Tb[i] = Tb[i+1]
-    Tb[N-1] = Tb0
-
-
-def update(frame):
-    update_temps()
-    Ta_plot.set_ydata(Ta)
-    Tb_plot.set_ydata(Tb)
-    Tdiff_plot.set_ydata(Ta-Tb)
-    return (Ta_plot, Tb_plot, Tdiff_plot)
-
-def main():
-    ani = animation.FuncAnimation(fig=fig, func=update, save_count=1200, interval=10, blit=True)
+    def update(self, frame):
+        self.cfc.update()
+        self.Ta_plot.set_ydata(self.cfc.Ta)
+        self.Tb_plot.set_ydata(self.cfc.Tb)
+        self.Tdiff_plot.set_ydata(self.cfc.Ta - self.cfc.Tb)
+        return (self.Ta_plot, self.Tb_plot, self.Tdiff_plot)
     
-    # display the animation on the screen
+def main():
+    sim = Simulation(N=254, Ta_in=80, Tb_in=14, Fa=2/60, Fb=3/60, k=0.001)
+    ani = animation.FuncAnimation(
+        fig=sim.fig,
+        func=sim.update,
+        save_count=1200,
+        interval=10,
+        blit=True
+    )
     plt.show()
-
-    # save the animation to file
-    #ani.save(filename="./asymptotic_to_coolant_temperature.mp4", fps=60)
-
-    print("Ta", Ta[0], Ta[-1])
-    print("Tb", Tb[0], Tb[-1])
+    print(sim.cfc.Ta)
+    print(sim.cfc.Tb)
 
 if __name__ == '__main__':
     main()
