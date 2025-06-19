@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
-from functools import partial
 
 class CFC:
     def __init__(self, Ta_in, Tb_in, Fa, Fb, k, Ca, Cb, N:int):
@@ -54,8 +53,8 @@ def main():
         blit=True
     )
     plt.show()
-    print(sim.cfc.Ta)
-    print(sim.cfc.Tb)
+    print(sim.cfc.Ta[-1])
+    print(sim.cfc.Tb[0])
 
 if __name__ == '__main__':
     main()
