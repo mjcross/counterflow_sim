@@ -3,7 +3,7 @@ import matplotlib.animation as animation
 import numpy as np
 
 class CFC:
-    def __init__(self, Ta_in, Tb_in, Fa, Fb, k, Ca, Cb, N:int):
+    def __init__(self, Ta_in, Tb_in, Fa, Fb, kq, Ca, Cb, N:int):
         self.N = N
         self.Ta_in = Ta_in
         self.Tb_in = Tb_in
@@ -13,17 +13,17 @@ class CFC:
         self.Tb_out = self.Tb[0]       
         self.Ca = Fa * Ca
         self.Cb = Fb * Cb
-        self.k = k
+        self.kq = kq
 
     def __str__(self):
             strrep = f'Stream A: T_in {self.Ta_in:.3f} T_out {self.Ta_out:.3f} Flow {self.Ca:.3f}\n'
             strrep += f'Stream B: T_in {self.Tb_in:.3f} T_out {self.Tb_out:.3f} Flow {self.Cb:.3f}\n'
-            strrep += f'k_q {self.k:.4f}\n'
+            strrep += f'kq {self.kq:.4f}\n'
             return strrep
 
     def update(self):
         for i in range(self.N):
-            dQ = self.k * (self.Ta[i] - self.Tb[i]) / self.N
+            dQ = self.kq * (self.Ta[i] - self.Tb[i]) / self.N
             self.Ta[i] -= dQ / self.Ca
             self.Tb[i] += dQ / self.Cb
         self.Ta = np.roll(self.Ta, 1)
@@ -51,7 +51,7 @@ class Simulation:
     def __str__(self):
         strrep = 'Counterflow\n' + str(self.cfc) + '\n'
         strrep += 'Model\n'
-        strrep += f'a {self.a:.3f} b {self.b:.3f} xi {self.xi:.3f} Te {self.Te:.3f}\n'
+        strrep += f'a {self.a:.3f} b {self.b:.3f} kx {self.kx:.3f} Te {self.Te:.3f}\n'
         return strrep
 
     def update(self, frame):
@@ -62,8 +62,8 @@ class Simulation:
 
         self.fit_model()
         model_x = np.linspace(0, 1, 6)
-        model_Ta = self.Te + self.a * np.exp(-self.xi * model_x)
-        model_Tb = self.Te + self.b * np.exp(-self.xi * model_x)
+        model_Ta = self.Te + self.a * np.exp(-self.kx * model_x)
+        model_Tb = self.Te + self.b * np.exp(-self.kx * model_x)
         self.Ta_model_plot.set_xdata(model_x)
         self.Ta_model_plot.set_ydata(model_Ta)
         self.Tb_model_plot.set_xdata(model_x)
@@ -74,9 +74,9 @@ class Simulation:
     def fit_model(self):
         cfc = self.cfc
         try:
-            self.xi = -np.log((cfc.Ta_out - cfc.Tb_in) / (cfc.Ta_in - cfc.Tb_out))
+            self.kx = -np.log((cfc.Ta_out - cfc.Tb_in) / (cfc.Ta_in - cfc.Tb_out))
         except ZeroDivisionError:
-            self.xi = 0
+            self.kx = 0
         try:
             self.a = (cfc.Ta_out - cfc.Ta_in) * (cfc.Ta_in - cfc.Tb_out) / ((cfc.Ta_out - cfc.Ta_in) + (cfc.Tb_out - cfc.Tb_in))
         except ZeroDivisionError:
@@ -88,7 +88,7 @@ class Simulation:
         self.Te = cfc.Ta_in - self.a
     
 def main():
-    sim = Simulation(N=1000, Ta_in=80, Tb_in=15, Fa=0.025, Fb=0.034, k=0.2)
+    sim = Simulation(N=250, Ta_in=80, Tb_in=15, Fa=0.025, Fb=0.04, k=0.1)
     ani = animation.FuncAnimation(
         fig=sim.fig,
         func=sim.update,
@@ -99,7 +99,41 @@ def main():
     plt.show()
     print(sim)
 
-    print(f'1/tau {sim.cfc.k * (sim.cfc.Ca * sim.cfc.Cb)/(sim.cfc.Ca + sim.cfc.Cb)}')
+    # the fitted exponential models are 
+    #   Ta = Te + a e^(-kx x)   => dTa/dx = (-a kx) e^(-kx x)
+    #   Tb = Te + b e^(-kx x)   => dTb/dx = (-b kx) e^(-kx x)
+
+    a = sim.a
+    b = sim.b
+    kx = sim.kx
+
+    dTadx_0 = -a * kx
+    dTadx_1 = -a * kx * np.exp(-kx)
+
+    dTbdx_0 = -b * kx
+    dTbdx_1 = -b * kx * np.exp(-kx)
+
+    Ta_0 = sim.cfc.Ta_in
+    Ta_1 = sim.cfc.Ta_out
+    Tb_0 = sim.cfc.Tb_out
+    Tb_1 = sim.cfc.Tb_in
+
+    deltaT_0 = Ta_0 - Tb_0
+    deltaT_1 = Ta_1 - Tb_1
+
+    Ca = sim.cfc.Ca
+    Cb = sim.cfc.Cb
+
+    kq_a0 = -Ca * dTadx_0 / deltaT_0
+    kq_a1 = -Ca * dTadx_1 / deltaT_1
+    kq_b0 = -Cb * dTbdx_0 / deltaT_0
+    kq_b1 = -Cb * dTbdx_1 / deltaT_1
+
+    print('Recovered kq')
+    print(f'dTa/dx {dTadx_0:.3f}, {dTadx_1:.3f}')
+    print(f'dTb/dx {dTbdx_0:.3f}, {dTbdx_1:.3f}')
+    print(f'deltaT {deltaT_0:.3f}, {deltaT_1:.3f}')
+    print(f'kq_a0 {kq_a0:.4f}\nkq_a1 {kq_a1:.4f}\nkq_b0 {kq_b0:.4f}\nkq_b1 {kq_b1:.4f}')
 
 if __name__ == '__main__':
     main()
