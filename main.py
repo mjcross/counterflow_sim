@@ -1,3 +1,9 @@
+'''
+Simulates a counterflow heat exchanger using finite elements,
+fits an exponential model to the input and output teperatures
+and infers the conductivity of the heat exchanger from the model
+'''
+
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
@@ -11,8 +17,8 @@ class CFC:
         self.Tb = np.array(N * [Tb_in], dtype='float')
         self.Ta_out = self.Ta[-1]
         self.Tb_out = self.Tb[0]       
-        self.Ca = Fa * Ca
-        self.Cb = Fb * Cb
+        self.Ca = Fa * Ca   # adjust the heat capacities so that we
+        self.Cb = Fb * Cb   # can pretend the flow rates are equal
         self.kq = kq
 
     def __str__(self):
@@ -72,18 +78,17 @@ class Simulation:
         return (self.Ta_plot, self.Tb_plot, self.Tdiff_plot, self.Ta_model_plot, self.Tb_model_plot)
     
     def fit_model(self):
+        # fit exponential models to input and output temps, so that
+        #   Ta = Te + a e^(-kx x)
+        #   Tb = Te + b e^(-kx x)
         cfc = self.cfc
         try:
             self.kx = -np.log((cfc.Ta_out - cfc.Tb_in) / (cfc.Ta_in - cfc.Tb_out))
-        except ZeroDivisionError:
-            self.kx = 0
-        try:
             self.a = (cfc.Ta_out - cfc.Ta_in) * (cfc.Ta_in - cfc.Tb_out) / ((cfc.Ta_out - cfc.Ta_in) + (cfc.Tb_out - cfc.Tb_in))
-        except ZeroDivisionError:
-            self.a = 0
-        try:
             self.b = (cfc.Tb_in - cfc.Tb_out) * (cfc.Ta_in - cfc.Tb_out) / ((cfc.Ta_out - cfc.Ta_in) + (cfc.Tb_out - cfc.Tb_in))
         except ZeroDivisionError:
+            self.kx = 0
+            self.a = 0
             self.b = 0
         self.Te = cfc.Ta_in - self.a
     
@@ -96,34 +101,39 @@ def main():
         interval=10,
         blit=True
     )
-    plt.show()
+    plt.show()  # simulation will run until the user closes the MatPlotLib window
+
+    # display CFC and model parameters
     print(sim)
 
-    # the fitted exponential models are 
-    #   Ta = Te + a e^(-kx x)   => dTa/dx = (-a kx) e^(-kx x)
-    #   Tb = Te + b e^(-kx x)   => dTb/dx = (-b kx) e^(-kx x)
-
+    # fitted model parameters
     a = sim.a
     b = sim.b
     kx = sim.kx
 
+    # derivatives of fitted exponentials 
+    #   dTa/dx = (-a kx) e^(-kx x)
+    #   dTb/dx = (-b kx) e^(-kx x)
     dTadx_0 = -a * kx
     dTadx_1 = -a * kx * np.exp(-kx)
-
     dTbdx_0 = -b * kx
     dTbdx_1 = -b * kx * np.exp(-kx)
 
+    # temps at either end of the CFC
     Ta_0 = sim.cfc.Ta_in
     Ta_1 = sim.cfc.Ta_out
     Tb_0 = sim.cfc.Tb_out
     Tb_1 = sim.cfc.Tb_in
 
+    # temp differences at either end of the CFC
     deltaT_0 = Ta_0 - Tb_0
     deltaT_1 = Ta_1 - Tb_1
 
+    # heat capacity flow rates (product of mass flow rate and specific heat capacity)
     Ca = sim.cfc.Ca
     Cb = sim.cfc.Cb
 
+    # infer the CFC conductivity from the HC rates, dT/dx and delta T
     kq_a0 = -Ca * dTadx_0 / deltaT_0
     kq_a1 = -Ca * dTadx_1 / deltaT_1
     kq_b0 = -Cb * dTbdx_0 / deltaT_0
