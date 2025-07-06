@@ -22,14 +22,14 @@ class CFC:
         self.kq = kq
 
     def __str__(self):
-            strrep = f'Stream A: T_in {self.Ta_in:.3f} T_out {self.Ta_out:.3f} Flow {self.Ca:.3f}\n'
-            strrep += f'Stream B: T_in {self.Tb_in:.3f} T_out {self.Tb_out:.3f} Flow {self.Cb:.3f}\n'
+            strrep = f'Stream A: T_in {self.Ta_in:.4f} T_out {self.Ta_out:.4f} Flow {self.Ca:.4f}\n'
+            strrep += f'Stream B: T_in {self.Tb_in:.4f} T_out {self.Tb_out:.4f} Flow {self.Cb:.4f}\n'
             strrep += f'kq {self.kq:.4f}\n'
             return strrep
 
     def update(self):
         for i in range(self.N):
-            dQ = self.kq * (self.Ta[i] - self.Tb[i]) / self.N
+            dQ = self.kq * (self.Ta[i] - self.Tb[i]) / (self.N - 1)
             self.Ta[i] -= dQ / self.Ca
             self.Tb[i] += dQ / self.Cb
         self.Ta = np.roll(self.Ta, 1)
@@ -57,7 +57,7 @@ class Simulation:
     def __str__(self):
         strrep = 'Counterflow\n' + str(self.cfc) + '\n'
         strrep += 'Model\n'
-        strrep += f'a {self.a:.3f} b {self.b:.3f} kx {self.kx:.3f} Te {self.Te:.3f}\n'
+        strrep += f'a {self.a:.4f} b {self.b:.4f} xi {1.0/self.kx:.4f} Te {self.Te:.4f}\n'
         return strrep
 
     def update(self, frame):
@@ -93,7 +93,8 @@ class Simulation:
         self.Te = cfc.Ta_in - self.a
     
 def main():
-    sim = Simulation(N=250, Ta_in=80, Tb_in=15, Fa=0.025, Fb=0.04, k=0.1)
+    #! this line is where we set the parameters for the simulation
+    sim = Simulation(N=1024, Ta_in=80, Tb_in=20, Fa=2, Fb=0.75, k=0.5)
     ani = animation.FuncAnimation(
         fig=sim.fig,
         func=sim.update,
@@ -139,11 +140,23 @@ def main():
     kq_b0 = -Cb * dTbdx_0 / deltaT_0
     kq_b1 = -Cb * dTbdx_1 / deltaT_1
 
-    print('Recovered kq')
-    print(f'dTa/dx {dTadx_0:.3f}, {dTadx_1:.3f}')
-    print(f'dTb/dx {dTbdx_0:.3f}, {dTbdx_1:.3f}')
-    print(f'deltaT {deltaT_0:.3f}, {deltaT_1:.3f}')
+    calc_kq = (kq_a0 + kq_a1 + kq_b0 + kq_b1) / 4.0
+
+    print('Calculated kq')
+    print(f'dTa/dx {dTadx_0:.4f}, {dTadx_1:.4f}')
+    print(f'dTb/dx {dTbdx_0:.4f}, {dTbdx_1:.4f}')
+    print(f'deltaT {deltaT_0:.4f}, {deltaT_1:.4f}')
     print(f'kq_a0 {kq_a0:.4f}\nkq_a1 {kq_a1:.4f}\nkq_b0 {kq_b0:.4f}\nkq_b1 {kq_b1:.4f}')
+    print(f'kq_mean {calc_kq:.4f}')
+
+     # calculate the spatial distibution parameters
+    calc_xi = -1/(calc_kq * (Ca - Cb)/(Ca * Cb))
+    calc_a = 1/(1 - Ca/Cb * np.exp(-1/calc_xi)) * (Ta_0 - Tb_1)
+    calc_b = 1/(Cb/Ca - np.exp(-1/calc_xi)) * (Ta_0 - Tb_1)
+    calc_Te = Ta_0 - calc_a
+
+    print('\nCalculated spatial parmeters')
+    print(f'a {calc_a:.4f} b {calc_b:.4f} xi {calc_xi:.4f} Te {calc_Te:.4f}')
 
 if __name__ == '__main__':
     main()
