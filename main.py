@@ -30,16 +30,15 @@ class Flow:
         return Tout
 
     def __str__(self):
-        strrep = f'N {self.N} dx {self.element_length} dm {self.element_mass} m_dot {self.mass_rate} Tin {self.Tin} '
-        strrep += f'dir {self.flow_direction} dC {self.element_heat_cap}\n'
-        strrep += f'{self.T}\n'
+        strrep = f'N {self.N} dx {self.element_length} dm {self.element_mass} dC {self.element_heat_cap} '
+        strrep += f'mass flow {self.mass_rate} ({self.flow_direction}) Tin {self.Tin} Tout {self.Tout}\n'
+        strrep += f'   {self.T}\n'
         return strrep
     
     def timestep(self, dt):
         weight_Tin = self.mass_rate * dt / self.element_mass
         weight_Told = 1 - weight_Tin
-        if weight_Told < 0:
-            raise ValueError(f'dt too high for mass flow rate (max {self.element_mass / self.mass_rate})')
+        assert weight_Told >= 0, f'dt too high for mass flow rate (max {self.element_mass / self.mass_rate})'
         if self.flow_direction == 'R':
             for n in range(self.N-1, -1, -1):
                 if n > 0:
@@ -60,29 +59,25 @@ class Flow:
                 raise ValueError('unrecognised flow direction')
 
 class CFC:
-    def __init__(self, length, 
-                 mass_a, mass_rate_a, specific_heat_capacity_a, Tin_a, 
-                 mass_b, mass_rate_b, specific_heat_capacity_b, Tin_b, 
-                 kq, N:int=5):
+    def __init__(self, length, kq, num_elements,
+                 mass_a, mass_rate_a, specific_heat_capacity_a, Tin_a,
+                 mass_b, mass_rate_b, specific_heat_capacity_b, Tin_b):
         self.t = 0
         self.length = length
         self.kq = kq
-        self.N = N
-        self.a = Flow(length, mass_a, mass_rate_a, specific_heat_capacity_a, Tin_a, 'R', N)
-        self.b = Flow(length, mass_b, mass_rate_b, specific_heat_capacity_b, Tin_b, 'L', N)
-        self.a.mass_rate = mass_rate_a
-        self.b.mass_rate = mass_rate_b
-        self.a.Tin = Tin_a
-        self.b.Tin = Tin_b
+        self.N = num_elements
+        self.a = Flow(length, mass_a, mass_rate_a, specific_heat_capacity_a, Tin_a, 'R', num_elements)
+        self.b = Flow(length, mass_b, mass_rate_b, specific_heat_capacity_b, Tin_b, 'L', num_elements)
 
     def __str__(self):
-        strrep = f'a:\tflow {self.a.mass_rate} Tin {self.a.Tin}\n\t{self.a.T}\n'
-        strrep += f'b:\tflow {self.b.mass_rate} Tin {self.b.Tin}\n\t{self.b.T}'
+        strrep = f'L {self.length} kq {self.kq}\n'
+        strrep += f'a: {self.a}'
+        strrep += f'b: {self.b}'
         return strrep
     
     def heat_transfer(self, dt):
         for n in range(self.N):
-            dQab = self.kq * (self.a.T[n] - self.b.T[n]) * dt
+            dQab = self.kq / self.N * (self.a.T[n] - self.b.T[n]) * dt
             self.a.T[n] -= dQab / self.a.element_heat_cap
             self.b.T[n] += dQab / self.b.element_heat_cap
     
@@ -98,10 +93,12 @@ class Simulation:
                  mass_a, mass_rate_a, specific_heat_capacity_a, Tin_a,
                  mass_b, mass_rate_b, specific_heat_capacity_b, Tin_b):
         self.cfc = CFC(
-            length=length, kq=kq, N=num_elements,
+            length=length, kq=kq, num_elements=num_elements,
             mass_a=mass_a, mass_rate_a=mass_rate_a, specific_heat_capacity_a=specific_heat_capacity_a, Tin_a=Tin_a,
             mass_b=mass_b, mass_rate_b=mass_rate_b, specific_heat_capacity_b=specific_heat_capacity_b, Tin_b=Tin_b)
         self.dt = time_step
+
+        # set up the chart
         self.x = np.linspace(0, length, num_elements)
         self.fig, ax = plt.subplots()
         plt.grid(axis='y')
@@ -115,9 +112,8 @@ class Simulation:
         ax.legend(loc='upper right')
 
     def __str__(self):
-        strrep = f'Counterflow\n {self.cfc}\n'
-        strrep += 'Model\n'
-        strrep += f'a {self.a:.4f} b {self.b:.4f} xi {1.0/self.kx:.4f} Te {self.Te:.4f}\n'
+        strrep = f'Counterflow: dt {self.dt} {self.cfc}\n'
+        strrep += f'Model: a {self.a:.4f} b {self.b:.4f} xi {1.0/self.kx:.4f} Te {self.Te:.4f}\n'
         return strrep
 
     def update(self, frame):
@@ -157,15 +153,16 @@ class Simulation:
 def main():
     np.set_printoptions(precision=4, floatmode='fixed', threshold=10)
 
-    #! this line is where we set the parameters for the simulation
-    sim = Simulation(length=1, kq=0.005, time_step=0.001, num_elements=256,
+    #! this is where we set the parameters for the simulation
+    sim = Simulation(length=1, kq=1, time_step=0.0005, num_elements=512,
                      mass_a=1, mass_rate_a=2, specific_heat_capacity_a=1, Tin_a=80,
                      mass_b=1, mass_rate_b=0.75, specific_heat_capacity_b=1, Tin_b=20)
+    
     ani = animation.FuncAnimation(
         fig=sim.fig,
         func=sim.update,
         save_count=1200,
-        interval=10,
+        interval=0,
         blit=True
     )
     plt.show()  # simulation will run until the user closes the MatPlotLib window
