@@ -8,46 +8,106 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 
-class CFC:
-    def __init__(self, Ta_in, Tb_in, Fa, Fb, kq, Ca, Cb, N:int):
+class Flow:
+    def __init__(self, length, mass, mass_rate, specific_heat_capacity, Tin, flow_direction='R', N:int=256):
         self.N = N
-        self.Ta_in = Ta_in
-        self.Tb_in = Tb_in
-        self.Ta = np.array(N * [Ta_in], dtype='float')
-        self.Tb = np.array(N * [Tb_in], dtype='float')
-        self.Ta_out = self.Ta[-1]
-        self.Tb_out = self.Tb[0]       
-        self.Ca = Fa * Ca   # adjust the heat capacities so that we
-        self.Cb = Fb * Cb   # can pretend the flow rates are equal
-        self.kq = kq
+        self.flow_direction = flow_direction
+        self.element_length = length / N
+        self.element_mass = mass / N
+        self.mass_rate = mass_rate
+        self.element_heat_cap = specific_heat_capacity * self.element_mass
+        self.Tin = Tin
+        self.T = np.array(N * [Tin], dtype='float')
+
+    @property
+    def Tout(self):
+        if self.flow_direction == 'R':
+            Tout = self.T[self.N - 1]
+        elif self.flow_direction == 'L':
+            Tout = self.T[0]
+        else:
+            raise ValueError('unrecognised flow direction')
+        return Tout
 
     def __str__(self):
-            strrep = f'Stream A: T_in {self.Ta_in:.4f} T_out {self.Ta_out:.4f} Flow {self.Ca:.4f}\n'
-            strrep += f'Stream B: T_in {self.Tb_in:.4f} T_out {self.Tb_out:.4f} Flow {self.Cb:.4f}\n'
-            strrep += f'kq {self.kq:.4f}\n'
-            return strrep
+        strrep = f'N {self.N} dx {self.element_length} dm {self.element_mass} m_dot {self.mass_rate} Tin {self.Tin} '
+        strrep += f'dir {self.flow_direction} dC {self.element_heat_cap}\n'
+        strrep += f'{self.T}\n'
+        return strrep
+    
+    def timestep(self, dt):
+        weight_Tin = self.mass_rate * dt / self.element_mass
+        weight_Told = 1 - weight_Tin
+        if weight_Told < 0:
+            raise ValueError(f'dt too high for mass flow rate (max {self.element_mass / self.mass_rate})')
+        if self.flow_direction == 'R':
+            for n in range(self.N-1, -1, -1):
+                if n > 0:
+                    Tin = self.T[n-1]
+                else:
+                    Tin = self.Tin
+                Told = self.T[n]
+                self.T[n] = Tin * weight_Tin + Told * weight_Told
+        elif self.flow_direction == 'L':
+            for n in range(self.N):
+                if n < (self.N - 1):
+                    Tin = self.T[n+1]
+                else:
+                    Tin = self.Tin
+                Told = self.T[n]
+                self.T[n] = Tin * weight_Tin + Told * weight_Told
+        else:
+                raise ValueError('unrecognised flow direction')
 
-    def update(self):
-        for i in range(self.N):
-            dQ = self.kq * (self.Ta[i] - self.Tb[i]) / (self.N - 1)
-            self.Ta[i] -= dQ / self.Ca
-            self.Tb[i] += dQ / self.Cb
-        self.Ta = np.roll(self.Ta, 1)
-        self.Tb = np.roll(self.Tb, -1)
-        self.Ta[0] = self.Ta_in
-        self.Tb[-1] = self.Tb_in
-        self.Ta_out = self.Ta[-1]
-        self.Tb_out = self.Tb[0]
+class CFC:
+    def __init__(self, length, 
+                 mass_a, mass_rate_a, specific_heat_capacity_a, Tin_a, 
+                 mass_b, mass_rate_b, specific_heat_capacity_b, Tin_b, 
+                 kq, N:int=5):
+        self.t = 0
+        self.length = length
+        self.kq = kq
+        self.N = N
+        self.a = Flow(length, mass_a, mass_rate_a, specific_heat_capacity_a, Tin_a, 'R', N)
+        self.b = Flow(length, mass_b, mass_rate_b, specific_heat_capacity_b, Tin_b, 'L', N)
+        self.a.mass_rate = mass_rate_a
+        self.b.mass_rate = mass_rate_b
+        self.a.Tin = Tin_a
+        self.b.Tin = Tin_b
+
+    def __str__(self):
+        strrep = f'a:\tflow {self.a.mass_rate} Tin {self.a.Tin}\n\t{self.a.T}\n'
+        strrep += f'b:\tflow {self.b.mass_rate} Tin {self.b.Tin}\n\t{self.b.T}'
+        return strrep
+    
+    def heat_transfer(self, dt):
+        for n in range(self.N):
+            dQab = self.kq * (self.a.T[n] - self.b.T[n]) * dt
+            self.a.T[n] -= dQab / self.a.element_heat_cap
+            self.b.T[n] += dQab / self.b.element_heat_cap
+    
+    def timestep(self, dt):
+        self.a.timestep(dt)
+        self.b.timestep(dt)
+        self.heat_transfer(dt)
+        self.t += dt
+    
 
 class Simulation:
-    def __init__(self, Ta_in, Tb_in, Fa, Fb, k, Ca:float=1, Cb:float=1, N:int=250):
-        self.cfc = CFC(Ta_in, Tb_in, Fa, Fb, k, Ca, Cb, N)
-        self.x = np.linspace(0, 1, N)
+    def __init__(self, length, kq, num_elements, time_step,
+                 mass_a, mass_rate_a, specific_heat_capacity_a, Tin_a,
+                 mass_b, mass_rate_b, specific_heat_capacity_b, Tin_b):
+        self.cfc = CFC(
+            length=length, kq=kq, N=num_elements,
+            mass_a=mass_a, mass_rate_a=mass_rate_a, specific_heat_capacity_a=specific_heat_capacity_a, Tin_a=Tin_a,
+            mass_b=mass_b, mass_rate_b=mass_rate_b, specific_heat_capacity_b=specific_heat_capacity_b, Tin_b=Tin_b)
+        self.dt = time_step
+        self.x = np.linspace(0, length, num_elements)
         self.fig, ax = plt.subplots()
         plt.grid(axis='y')
-        self.Ta_plot = ax.plot(self.x, self.cfc.Ta, 'k-', label='Fluid A (flowing right)')[0]
-        self.Tb_plot = ax.plot(self.x, self.cfc.Tb, 'k--', label='Fluid B (flowing left)')[0]
-        self.Tdiff_plot = ax.plot(self.x, self.cfc.Ta - self.cfc.Tb, 'k:', label='difference')[0]
+        self.Ta_plot = ax.plot(self.x, self.cfc.a.T, 'k-', label='Fluid A (flowing right)')[0]
+        self.Tb_plot = ax.plot(self.x, self.cfc.b.T, 'k--', label='Fluid B (flowing left)')[0]
+        self.Tdiff_plot = ax.plot(self.x, self.cfc.a.T - self.cfc.b.T, 'k:', label='difference')[0]
         self.Ta_model_plot = ax.plot([], [], linestyle='none', marker='o', markeredgecolor='black', markerfacecolor='white', markersize=10, label='Exponential fit A')[0]
         self.Tb_model_plot = ax.plot([], [], linestyle='none', marker='^', markeredgecolor='black', markerfacecolor='white', markersize=10, label='Exponential fit B')[0]
         ax.set(ylim=[0.1, 100], xlabel='Displacement $x$', ylabel='Temperature')
@@ -55,16 +115,16 @@ class Simulation:
         ax.legend(loc='upper right')
 
     def __str__(self):
-        strrep = 'Counterflow\n' + str(self.cfc) + '\n'
+        strrep = f'Counterflow\n {self.cfc}\n'
         strrep += 'Model\n'
         strrep += f'a {self.a:.4f} b {self.b:.4f} xi {1.0/self.kx:.4f} Te {self.Te:.4f}\n'
         return strrep
 
     def update(self, frame):
-        self.cfc.update()
-        self.Ta_plot.set_ydata(self.cfc.Ta)
-        self.Tb_plot.set_ydata(self.cfc.Tb)
-        self.Tdiff_plot.set_ydata(self.cfc.Ta - self.cfc.Tb)
+        self.cfc.timestep(self.dt)
+        self.Ta_plot.set_ydata(self.cfc.a.T)
+        self.Tb_plot.set_ydata(self.cfc.b.T)
+        self.Tdiff_plot.set_ydata(self.cfc.a.T - self.cfc.b.T)
 
         self.fit_model()
         model_x = np.linspace(0, 1, 6)
@@ -75,6 +135,7 @@ class Simulation:
         self.Tb_model_plot.set_xdata(model_x)
         self.Tb_model_plot.set_ydata(model_Tb)
 
+
         return (self.Ta_plot, self.Tb_plot, self.Tdiff_plot, self.Ta_model_plot, self.Tb_model_plot)
     
     def fit_model(self):
@@ -83,18 +144,23 @@ class Simulation:
         #   Tb = Te + b e^(-kx x)
         cfc = self.cfc
         try:
-            self.kx = -np.log((cfc.Ta_out - cfc.Tb_in) / (cfc.Ta_in - cfc.Tb_out))
-            self.a = (cfc.Ta_out - cfc.Ta_in) * (cfc.Ta_in - cfc.Tb_out) / ((cfc.Ta_out - cfc.Ta_in) + (cfc.Tb_out - cfc.Tb_in))
-            self.b = (cfc.Tb_in - cfc.Tb_out) * (cfc.Ta_in - cfc.Tb_out) / ((cfc.Ta_out - cfc.Ta_in) + (cfc.Tb_out - cfc.Tb_in))
+            self.kx = -np.log((cfc.a.Tout - cfc.b.Tin) / (cfc.a.Tin - cfc.b.Tout))
+            self.a = (cfc.a.Tout - cfc.a.Tin) * (cfc.a.Tin - cfc.b.Tout) / ((cfc.a.Tout - cfc.a.Tin) + (cfc.b.Tout - cfc.b.Tin))
+            self.b = (cfc.b.Tin - cfc.b.Tout) * (cfc.a.Tin - cfc.b.Tout) / ((cfc.a.Tout - cfc.a.Tin) + (cfc.b.Tout - cfc.b.Tin))
         except ZeroDivisionError:
             self.kx = 0
             self.a = 0
             self.b = 0
-        self.Te = cfc.Ta_in - self.a
-    
+        self.Te = cfc.a.Tin - self.a
+
+        
 def main():
+    np.set_printoptions(precision=4, floatmode='fixed', threshold=10)
+
     #! this line is where we set the parameters for the simulation
-    sim = Simulation(N=1024, Ta_in=80, Tb_in=20, Fa=2, Fb=0.75, k=0.5)
+    sim = Simulation(length=1, kq=0.005, time_step=0.001, num_elements=256,
+                     mass_a=1, mass_rate_a=2, specific_heat_capacity_a=1, Tin_a=80,
+                     mass_b=1, mass_rate_b=0.75, specific_heat_capacity_b=1, Tin_b=20)
     ani = animation.FuncAnimation(
         fig=sim.fig,
         func=sim.update,
@@ -121,18 +187,18 @@ def main():
     dTbdx_1 = -b * kx * np.exp(-kx)
 
     # temps at either end of the CFC
-    Ta_0 = sim.cfc.Ta_in
-    Ta_1 = sim.cfc.Ta_out
-    Tb_0 = sim.cfc.Tb_out
-    Tb_1 = sim.cfc.Tb_in
+    Ta_0 = sim.cfc.a.Tin
+    Ta_1 = sim.cfc.a.Tout
+    Tb_0 = sim.cfc.b.Tout
+    Tb_1 = sim.cfc.b.Tin
 
     # temp differences at either end of the CFC
     deltaT_0 = Ta_0 - Tb_0
     deltaT_1 = Ta_1 - Tb_1
 
     # heat capacity flow rates (product of mass flow rate and specific heat capacity)
-    Ca = sim.cfc.Ca
-    Cb = sim.cfc.Cb
+    Ca = sim.cfc.a.element_heat_cap / sim.cfc.a.element_mass * sim.cfc.a.mass_rate
+    Cb = sim.cfc.b.element_heat_cap / sim.cfc.b.element_mass * sim.cfc.b.mass_rate
 
     # infer the CFC conductivity from the HC rates, dT/dx and delta T
     kq_a0 = -Ca * dTadx_0 / deltaT_0
