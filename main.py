@@ -17,8 +17,18 @@ class Flow:
         self.mass_flow_rate = mass_flow_rate
         self.specific_heat_capacity = specific_heat_capacity
         self.element_heat_capacity = specific_heat_capacity * self.element_mass
-        self.Tin = Tin
+        self.Tfeed = Tin
         self.T = np.array(N * [Tin], dtype='float')
+
+    @property
+    def Tin(self):
+        if self.flow_direction == 'R':
+            Tin = self.T[0]
+        elif self.flow_direction == 'L':
+            Tin = self.T[self.N - 1]
+        else:
+            raise ValueError('unrecognised flow direction')
+        return Tin
 
     @property
     def Tout(self):
@@ -46,7 +56,7 @@ class Flow:
                 if n > 0:
                     Tnew = self.T[n-1]
                 else:
-                    Tnew = self.Tin
+                    Tnew = self.Tfeed
                 Told = self.T[n]
                 self.T[n] = Tnew * Tnew_proportion + Told * Told_proportion
         elif self.flow_direction == 'L':
@@ -54,7 +64,7 @@ class Flow:
                 if n < (self.N - 1):
                     Tnew = self.T[n+1]
                 else:
-                    Tnew = self.Tin
+                    Tnew = self.Tfeed
                 Told = self.T[n]
                 self.T[n] = Tnew * Tnew_proportion + Told * Told_proportion
         else:
@@ -87,7 +97,7 @@ class CFC:
     def timestep(self, dt):
         self.a.timestep(dt)
         self.b.timestep(dt)
-        self.heat_transfer(dt)
+        self.heat_transfer(dt)        
         self.t += dt
     
 
@@ -119,7 +129,7 @@ class Simulation:
         ax.legend(loc='upper right')
 
     def __str__(self):
-        strrep = f'Counterflow: dt {self.dt} {self.cfc}\n'
+        strrep = f'Counterflow: dt {self.dt:.4f} {self.cfc}\n'
         strrep += f'Model: a {self.a:.4f} b {self.b:.4f} xi {self.xi:.4f} Te {self.Te:.4f}\n'
         return strrep
 
@@ -134,7 +144,7 @@ class Simulation:
             self.a = (cfc.a.Tout - cfc.a.Tin) * (cfc.a.Tin - cfc.b.Tout) / ((cfc.a.Tout - cfc.a.Tin) + (cfc.b.Tout - cfc.b.Tin))
             self.b = (cfc.b.Tin - cfc.b.Tout) * (cfc.a.Tin - cfc.b.Tout) / ((cfc.a.Tout - cfc.a.Tin) + (cfc.b.Tout - cfc.b.Tin))
         except FloatingPointError:
-            self.xi = 0
+            self.xi = 1
             self.a = 0
             self.b = 0
         self.Te = cfc.a.Tin - self.a
@@ -161,9 +171,9 @@ def main():
     np.set_printoptions(precision=4, floatmode='fixed', threshold=10)
 
     #! this is where we set the parameters for the simulation
-    sim = Simulation(length=2, kq=0.5, num_elements=256, mass_new_old_ratio=0.2,
-                     total_mass_a=1, mass_flow_rate_a=0.75, specific_heat_capacity_a=1, Tin_a=80,
-                     total_mass_b=2, mass_flow_rate_b=0.25, specific_heat_capacity_b=1, Tin_b=20)
+    sim = Simulation(length=2, kq=1.247665, num_elements=256, mass_new_old_ratio=0.2,
+                     total_mass_a=1, mass_flow_rate_a=0.45, specific_heat_capacity_a=1, Tin_a=80,
+                     total_mass_b=1, mass_flow_rate_b=0.6, specific_heat_capacity_b=1, Tin_b=15)
     
     ani = animation.FuncAnimation(
         fig=sim.fig,
@@ -182,40 +192,37 @@ def main():
     b = sim.b
     xi = sim.xi
     L = sim.cfc.length
-
-    # derivatives of fitted exponentials 
-    #   dTa/dx = (-a kx) e^(-kx x)
-    #   dTb/dx = (-b kx) e^(-kx x)
-    dTadx_0 = -a / xi
-    dTadx_1 = -a / xi * np.exp(-L/xi)
-    dTbdx_0 = -b / xi
-    dTbdx_1 = -b / xi * np.exp(-L/xi)
+    kq = sim.cfc.kq
 
     # temps at either end of the CFC
-    Ta_0 = sim.cfc.a.Tin
-    Ta_1 = sim.cfc.a.Tout
-    Tb_0 = sim.cfc.b.Tout
-    Tb_1 = sim.cfc.b.Tin
+    Ta_in = sim.cfc.a.Tin
+    Ta_out = sim.cfc.a.Tout
+    Tb_in = sim.cfc.b.Tin
+    Tb_out = sim.cfc.b.Tout
 
     # heat capacity flow rates (product of mass flow rate and specific heat capacity)
-    Ca_rate = sim.cfc.a.specific_heat_capacity * sim.cfc.a.mass_flow_rate
-    Cb_rate = sim.cfc.b.specific_heat_capacity * sim.cfc.b.mass_flow_rate
+    Ca_rate = sim.cfc.a.mass_flow_rate * sim.cfc.a.specific_heat_capacity
+    Cb_rate = sim.cfc.b.mass_flow_rate * sim.cfc.b.specific_heat_capacity
 
-    kq_a = 1/L * Ca_rate * (Ta_1-Ta_0)/(Ta_1-Ta_0+Tb_0-Tb_1) * np.log((Ta_0-Tb_0)/(Ta_1-Tb_1))
-    kq_b = 1/L * Cb_rate * (Tb_1-Tb_0)/(Ta_1-Ta_0+Tb_0-Tb_1) * np.log((Ta_0-Tb_0)/(Ta_1-Tb_1))
+    kq_a = 1/L * Ca_rate * (Ta_out-Ta_in)/(Ta_out-Ta_in+Tb_out-Tb_in) * np.log((Ta_in-Tb_out)/(Ta_out-Tb_in))
+    kq_b = 1/L * Cb_rate * (Tb_in-Tb_out)/(Ta_out-Ta_in+Tb_out-Tb_in) * np.log((Ta_in-Tb_out)/(Ta_out-Tb_in))
 
     kq_mean = (kq_a + kq_b) / 2
 
     print('Calculated kq')
     print(f'kq_a {kq_a:.4f}\nkq_b {kq_b:.4f}\nkq_mean {kq_mean:.4f}')
+    xi_new = 1/( 1/L * np.log((Ta_in-Tb_out)/(Ta_out-Tb_in)) )
+    xi_new2 = 1/( kq * (1/Ca_rate - 1/Cb_rate) )
+    print(f'xi_new {xi_new} {xi_new2}')
+    
 
      # calculate the spatial distibution parameters
     calc_xi = -1/(kq_mean * (Ca_rate - Cb_rate)/(Ca_rate * Cb_rate))
-    calc_a = 1/(1 - Ca_rate/Cb_rate * np.exp(-L/calc_xi)) * (Ta_0 - Tb_1)
-    calc_b = 1/(Cb_rate/Ca_rate - np.exp(-L/calc_xi)) * (Ta_0 - Tb_1)
-    calc_Te = Ta_0 - calc_a
+    calc_a = 1/(1 - Ca_rate/Cb_rate * np.exp(-L/calc_xi)) * (Ta_in - Tb_in)
+    calc_b = 1/(Cb_rate/Ca_rate - np.exp(-L/calc_xi)) * (Ta_in - Tb_in)
+    calc_Te = Ta_in - calc_a
 
-    print('\nCalculated spatial parmeters')
+    print('\nCalculated spatial parameters')
     print(f'a {calc_a:.4f} b {calc_b:.4f} xi {calc_xi:.4f} Te {calc_Te:.4f}')
 
 if __name__ == '__main__':
